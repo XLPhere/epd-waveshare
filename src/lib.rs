@@ -114,6 +114,9 @@ pub mod prelude {
         QuickRefresh, RefreshLut, WaveshareDisplay, WaveshareThreeColorDisplay,
     };
 
+    #[cfg(feature = "async")]
+    pub use crate::traits::WaveshareDisplayAsync;
+
     pub use crate::SPI_MODE;
 
     #[cfg(feature = "graphics")]

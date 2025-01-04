@@ -207,6 +207,56 @@ where
     }
 }
 
+#[cfg(feature = "async")]
+impl<SPI, BUSY, DC, RST, DELAY, ADELAY>
+    crate::traits::WaveshareDisplayAsync<SPI, BUSY, DC, RST, ADELAY>
+    for Epd5in65f<SPI, BUSY, DC, RST, DELAY>
+where
+    SPI: SpiDevice,
+    BUSY: InputPin,
+    DC: OutputPin,
+    RST: OutputPin,
+    DELAY: DelayNs,
+    ADELAY: embedded_hal_async::delay::DelayNs,
+{
+    async fn update_frame_async(
+        &mut self,
+        spi: &mut SPI,
+        buffer: &[u8],
+        delay: &mut ADELAY,
+    ) -> Result<(), SPI::Error> {
+        self.wait_until_idle_async(spi, delay).await?;
+        self.update_vcom(spi)?;
+        self.send_resolution(spi)?;
+        self.cmd_with_data(spi, Command::DataStartTransmission1, buffer)?;
+        Ok(())
+    }
+
+    async fn display_frame_async(
+        &mut self,
+        spi: &mut SPI,
+        delay: &mut ADELAY,
+    ) -> Result<(), SPI::Error> {
+        self.wait_until_idle_async(spi, delay).await?;
+        self.command(spi, Command::PowerOn)?;
+        self.wait_until_idle_async(spi, delay).await?;
+        self.command(spi, Command::DisplayRefresh)?;
+        self.wait_until_idle_async(spi, delay).await?;
+        self.command(spi, Command::PowerOff)?;
+        self.wait_busy_low_async(delay).await;
+        Ok(())
+    }
+
+    async fn wait_until_idle_async(
+        &mut self,
+        _spi: &mut SPI,
+        delay: &mut ADELAY,
+    ) -> Result<(), SPI::Error> {
+        self.interface.wait_until_idle_async(delay, true).await;
+        Ok(())
+    }
+}
+
 impl<SPI, BUSY, DC, RST, DELAY> Epd5in65f<SPI, BUSY, DC, RST, DELAY>
 where
     SPI: SpiDevice,
@@ -234,6 +284,13 @@ where
 
     fn wait_busy_low(&mut self, delay: &mut DELAY) {
         self.interface.wait_until_idle(delay, false);
+    }
+
+    async fn wait_busy_low_async<ADELAY: embedded_hal_async::delay::DelayNs>(
+        &mut self,
+        delay: &mut ADELAY,
+    ) {
+        self.interface.wait_until_idle_async(delay, false).await;
     }
     fn send_resolution(&mut self, spi: &mut SPI) -> Result<(), SPI::Error> {
         let w = self.width();

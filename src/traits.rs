@@ -258,6 +258,47 @@ where
     fn wait_until_idle(&mut self, spi: &mut SPI, delay: &mut DELAY) -> Result<(), SPI::Error>;
 }
 
+#[cfg(feature = "async")]
+/// Trait that implements async versions of functions in [`WaveshareDisplay`]
+///
+/// * [`WaveshareDisplayAsync::update_frame_async`] is a replacement for  [`WaveshareDisplay::update_frame`]
+/// * [`WaveshareDisplayAsync::display_frame_async`] is a replacement for  [`WaveshareDisplay::display_frame`]
+/// * Other are only available as sync in [`WaveshareDisplay`]
+pub trait WaveshareDisplayAsync<SPI, BUSY, DC, RST, DELAY>
+where
+    SPI: SpiDevice,
+    BUSY: InputPin,
+    DC: OutputPin,
+    RST: OutputPin,
+    DELAY: embedded_hal_async::delay::DelayNs,
+{
+    /// Transmit a full frame to the SRAM of the EPD
+    fn update_frame_async(
+        &mut self,
+        spi: &mut SPI,
+        buffer: &[u8],
+        delay: &mut DELAY,
+    ) -> impl core::future::Future<Output = Result<(), SPI::Error>>;
+
+    /// Displays the frame data from SRAM
+    ///
+    /// This function waits until the device isn`t busy anymore
+    fn display_frame_async(
+        &mut self,
+        spi: &mut SPI,
+        delay: &mut DELAY,
+    ) -> impl core::future::Future<Output = Result<(), SPI::Error>>;
+
+    /// Wait until the display has stopped processing data
+    ///
+    /// You can call this to make sure a frame is displayed before goin further
+    fn wait_until_idle_async(
+        &mut self,
+        spi: &mut SPI,
+        delay: &mut DELAY,
+    ) -> impl core::future::Future<Output = Result<(), SPI::Error>>;
+}
+
 /// Allows quick refresh support for displays that support it; lets you send both
 /// old and new frame data to support this.
 ///

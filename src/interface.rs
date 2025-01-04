@@ -148,6 +148,24 @@ where
         }
     }
 
+    pub(crate) async fn wait_until_idle_async<ADELAY: embedded_hal_async::delay::DelayNs>(
+        &mut self,
+        delay: &mut ADELAY,
+        is_busy_low: bool,
+    ) {
+        while self.is_busy(is_busy_low) {
+            // This has been removed and added many time :
+            // - it is faster to not have it
+            // - it is complicated to pass the delay everywhere all the time
+            // - busy waiting can consume more power that delaying
+            // - delay waiting enables task switching on realtime OS
+            // -> keep it and leave the decision to the user
+            if self.delay_us > 0 {
+                delay.delay_us(self.delay_us).await;
+            }
+        }
+    }
+
     /// Same as `wait_until_idle` for device needing a command to probe Busy pin
     pub(crate) fn wait_until_idle_with_cmd<T: Command>(
         &mut self,
