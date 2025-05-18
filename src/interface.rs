@@ -31,10 +31,12 @@ pub(crate) struct DisplayInterface<SPI, BUSY, DC, RST, DELAY, const SINGLE_BYTE_
     rst: RST,
     /// number of ms the idle loop should sleep on
     delay_us: u32,
+    /// Async-only property weather [embedded_hal_async::digital::Wait] should be used if available
+    #[cfg(feature = "async")]
+    use_wait_trait: bool,
 }
 
 #[maybe_async::maybe_async]
-#[allow(async_fn_in_trait)]
 impl<SPI, BUSY, DC, RST, DELAY, const SINGLE_BYTE_WRITE: bool>
     DisplayInterface<SPI, BUSY, DC, RST, DELAY, SINGLE_BYTE_WRITE>
 where
@@ -48,6 +50,8 @@ where
     ///
     /// If no delay is given, a default delay of 10ms is used.
     pub fn new(busy: BUSY, dc: DC, rst: RST, delay_us: Option<u32>) -> Self {
+        #[cfg(feature = "async")]
+        let use_wait_trait = delay_us.is_none();
         // default delay of 10ms
         let delay_us = delay_us.unwrap_or(10_000);
         DisplayInterface {
@@ -57,6 +61,8 @@ where
             dc,
             rst,
             delay_us,
+            #[cfg(feature = "async")]
+            use_wait_trait,
         }
     }
 
@@ -153,6 +159,17 @@ where
     ///
     /// Most likely there was a mistake with the 2in9 busy connection
     pub(crate) async fn wait_until_idle(&mut self, delay: &mut DELAY, is_busy_low: bool) {
+        #[cfg(not(feature = "async"))]
+        {
+            self.wait_until_idle_poll(delay, is_busy_low).await;
+        }
+        #[cfg(feature = "async")]
+        {
+            (&mut *self).wait_until_idle_async(delay, is_busy_low).await;
+        }
+    }
+
+    async fn wait_until_idle_poll(&mut self, delay: &mut DELAY, is_busy_low: bool) {
         while self.is_busy(is_busy_low).await {
             // This has been removed and added many time :
             // - it is faster to not have it
@@ -222,5 +239,59 @@ where
         //TODO: the upstream libraries always sleep for 200ms here
         // 10ms works fine with just for the 7in5_v2 but this needs to be validated for other devices
         delay.delay_us(200_000).await;
+    }
+}
+
+/// Trait which asynchronously waits for device nolonger being busy.
+/// Implementation is being switched to use [embedded_hal_async::digital::Wait] when available or otherwise poll
+/// 
+/// This switching is accomplished with autoderef-specialisation (see https://github.com/dtolnay/case-studies/tree/master/autoref-specialization), 
+/// since normal specialisation itself is still unstable in rust at the time of writing (see https://github.com/rust-lang/rust/issues/31844).
+#[cfg(feature = "async")]
+trait WaitUntilIdleAsync<DELAY: DelayNs> {
+    async fn wait_until_idle_async(&mut self, delay: &mut DELAY, is_busy_low: bool);
+}
+
+/// Default impl when waiting for idle (polling)
+#[cfg(feature = "async")]
+impl<SPI, BUSY, DC, RST, DELAY, const SINGLE_BYTE_WRITE: bool> WaitUntilIdleAsync<DELAY>
+    for &mut DisplayInterface<SPI, BUSY, DC, RST, DELAY, SINGLE_BYTE_WRITE>
+where
+    SPI: SpiDevice,
+    BUSY: InputPin,
+    DC: OutputPin,
+    RST: OutputPin,
+    DELAY: DelayNs,
+{
+    async fn wait_until_idle_async(&mut self, delay: &mut DELAY, is_busy_low: bool) {
+        self.wait_until_idle_poll(delay, is_busy_low).await
+    }
+}
+
+/// Async specialisation when waiting for idle (Wait trait)
+#[cfg(feature = "async")]
+impl<SPI, BUSY, DC, RST, DELAY, const SINGLE_BYTE_WRITE: bool> WaitUntilIdleAsync<DELAY>
+    for DisplayInterface<SPI, BUSY, DC, RST, DELAY, SINGLE_BYTE_WRITE>
+where
+    SPI: SpiDevice,
+    BUSY: InputPin + embedded_hal_async::digital::Wait,
+    DC: OutputPin,
+    RST: OutputPin,
+    DELAY: DelayNs,
+{
+    async fn wait_until_idle_async(&mut self, delay: &mut DELAY, is_busy_low: bool) {
+        if self.use_wait_trait {
+            let wait_result = if is_busy_low {
+                self.busy.wait_for_high().await
+            } else {
+                self.busy.wait_for_low().await
+            };
+            if wait_result.is_err() {
+                // poll as a fallback if async wait failed
+                self.wait_until_idle_poll(delay, is_busy_low).await;
+            }
+        } else {
+            self.wait_until_idle_poll(delay, is_busy_low).await;
+        }
     }
 }
