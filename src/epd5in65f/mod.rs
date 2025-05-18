@@ -33,7 +33,7 @@ pub const HEIGHT: u32 = 448;
 /// Default Background Color
 pub const DEFAULT_BACKGROUND_COLOR: OctColor = OctColor::White;
 /// Default mode of writing data (single byte vs blockwise)
-const SINGLE_BYTE_WRITE: bool = true;
+const SINGLE_BYTE_WRITE: bool = false;
 
 /// Epd5in65f driver
 ///

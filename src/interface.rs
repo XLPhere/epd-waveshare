@@ -264,6 +264,7 @@ where
     DELAY: DelayNs,
 {
     async fn wait_until_idle_async(&mut self, delay: &mut DELAY, is_busy_low: bool) {
+        defmt::info!("poll wait_until_idle");
         self.wait_until_idle_poll(delay, is_busy_low).await
     }
 }
@@ -280,6 +281,7 @@ where
     DELAY: DelayNs,
 {
     async fn wait_until_idle_async(&mut self, delay: &mut DELAY, is_busy_low: bool) {
+        defmt::info!("async wait_until_idle");
         if self.use_wait_trait {
             let wait_result = if is_busy_low {
                 self.busy.wait_for_high().await
